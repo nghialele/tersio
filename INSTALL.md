@@ -12,6 +12,9 @@ Tersio installs into an agent host. Pick the row for the host you use.
 | [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) | `tersio install --host dsh` | `tersio update --host dsh` | `tersio uninstall --host dsh` |
 | [Codex](https://github.com/openai/codex) | `tersio install --host codex` | `tersio update --host codex` | `tersio uninstall --host codex` |
 | [Claude Code](https://code.claude.com) | `tersio install --host claude` | `tersio update --host claude` | `tersio uninstall --host claude` |
+| [Jcode](https://github.com/1jehuang/jcode) | `jcode tersio install` | rerun the same command | `jcode tersio uninstall` |
+
+Jcode is delegated: the `jcode` CLI owns its config, hooks, and MCP entry, so `tersio install --host jcode` runs `jcode tersio install` for you and Tersio writes none of jcode's files. `jcode tersio status` reports what is wired; Tersio reads that state in `tersio doctor` and `tersio_hosts`.
 
 The default one-liner installs the CLI and runs the setup menus (scope + Combo preset) in the same pass:
 

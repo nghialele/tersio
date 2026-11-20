@@ -19,7 +19,7 @@ Coding agents bill you per token. Three of the costs you never asked for:
 - **Shell output is noise.** A failing test prints hundreds of lines to reach the four that matter.
 - **The rules repeat every turn.** Your agent re-reads its instructions on every single turn.
 
-Tersio installs into Oh My Pi, Pi, Pi-in-go, OpenCode, DeepSeek Harness, Codex, and Claude Code, and cuts those costs:
+Tersio installs into Oh My Pi, Pi, Pi-in-go, OpenCode, DeepSeek Harness, Codex, Claude Code, and Jcode, and cuts those costs:
 
 | Mode | What it does for you |
 |---|---|
@@ -58,6 +58,7 @@ Then run the CLI. Bare `tersio` opens a menu and asks which host to install into
 | [pi](https://github.com/earendil-works/pi) | `tersio install --host pi` | `pi install npm:@krtclcdy/tersio` |
 | [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) | `tersio install --host dsh` | `dsh plugin --profile web add npm:@krtclcdy/tersio` |
 | [Pi-in-Go (PiG)](https://pi-in-go.dev) | `tersio install --host pig` | `pig install npm:@krtclcdy/tersio` |
+| [Jcode](https://github.com/1jehuang/jcode) | `jcode tersio install` | same command — Tersio delegates jcode's config, hooks, and MCP entry to the `jcode` CLI |
 
 One-off use without installing:
 
@@ -202,7 +203,7 @@ Shared, and identical for every host:
 | RTK binary | Not Tersio's: whatever `rtk` resolves to on `PATH` (or `~/.bun/bin`). rtk installs and updates it |
 | Ledger and caches | `~/.tersio/usage.db` — usage rows, prices, scorecard, state, Headroom records, and layout. Local only |
 | Activity log | `~/.tersio/activity.jsonl` — one line per change, as the Logs page reads it |
-| Host scope | The same `usage.db` mirrors omp, pi, PiG, OpenCode, DeepSeek Harness, Codex, and Claude Code sessions, split by host and agent kind |
+| Host scope | The same `usage.db` mirrors omp, pi, PiG, OpenCode, DeepSeek Harness, Codex, Claude Code, and Jcode sessions, split by host and agent kind. Jcode keeps its own append-only ledger at `~/.jcode/tersio-usage.db` (or `$TERSIO_HOME/jcode-usage.db`); each sync reads it one-way and never writes it |
 | Snapshots | `~/.tersio/backups/` — one hashed `.snap` each, fourteen kept, carrying `usage.db` whole |
 
 The installer writes `<file>.bak` before it replaces a source. `tersio doctor --fix extensions` restores a damaged tree, and `doctor --fix registrations` drops retired or duplicate `config.yml` entries.
