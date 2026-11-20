@@ -29,7 +29,7 @@ import {
   usdCost,
   walkJsonl,
 } from './usage-ledger.ts';
-import { tersioDataPath } from './utils.ts';
+import { tersioDataPath, homeDir } from './utils.ts';
 import { createDataBackup, newestDataBackup, readSnapshotMember, restoreSnapshotMember } from './snapshots.ts';
 import { MODEL_ALIASES } from './pricing.ts';
 import { readRetentionDays, tersioSettingsFile } from './plugin-settings.ts';
@@ -766,6 +766,122 @@ function insertSql(file: string, r: StoredRow): string {
 }
 
 // Unchanged transcripts are skipped via mtime+size; rows for deleted ones are kept so rotation never erases history.
+const JCODE_LEDGER_VERSION = '1';
+
+/** The append-only ledger `scripts/tersio/usage-log.sh` writes; read-only for Tersio, always. */
+export function jcodeLedgerPath(): string {
+  const override = process.env.TERSIO_HOME;
+  if (override && override.trim() !== '') return path.join(override, 'jcode-usage.db');
+  return path.join(homeDir(), '.jcode', 'tersio-usage.db');
+}
+
+interface JcodeTurn {
+  t: number | null;
+  model: string;
+  i: number;
+  o: number;
+  d: number | undefined;
+  cr: number;
+  cw: number;
+  st: RunStatus;
+  cwd: string | undefined;
+}
+
+const JCODE_TURNS_SQL =
+  'SELECT ts, session_id, model, cwd, status, duration_ms, prompt_tokens, ' +
+  'input_tokens, output_tokens, cache_read_tokens, cache_write_tokens FROM turns;';
+
+/** One of the three run statuses the store carries; anything else a ledger wrote reads as completed. */
+function jcodeStatus(raw: unknown): RunStatus {
+  return raw === 'error' || raw === 'aborted' ? raw : 'completed';
+}
+
+function jcodeInt(v: unknown): number {
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+}
+
+/**
+ * Read jcode's turn ledger without touching it: no create, no migrate, no checkpoint, no delete.
+ * A missing database or table, or SQLite being unavailable, is a clean no-op; a read error yields
+ * no rows rather than failing the transcript sync around it.
+ */
+function readJcodeTurns(db: string): JcodeTurn[] {
+  try {
+    if (!fs.existsSync(db)) return [];
+    const out = sqliteRead(db, JCODE_TURNS_SQL);
+    const turns: JcodeTurn[] = [];
+    for (const line of out.split('\n')) {
+      if (!line.trim()) continue;
+      const [ts, sessionId, model, cwd, status, durationMs, promptTokens, input, output, cacheRead, cacheWrite] =
+        line.split('\t');
+      const parsed = Date.parse(ts ?? '');
+      turns.push({
+        t: Number.isFinite(parsed) ? parsed : null,
+        model: model && model.trim() !== '' ? canonicalModelId(model) : 'unknown',
+        i: jcodeInt(input),
+        o: jcodeInt(output),
+        d: (() => {
+          const n = Number(durationMs);
+          return Number.isFinite(n) && n >= 0 ? n : undefined;
+        })(),
+        cr: jcodeInt(cacheRead),
+        cw: jcodeInt(cacheWrite),
+        st: jcodeStatus(status),
+        cwd: cwd && cwd.trim() !== '' ? cwd : undefined,
+      });
+    }
+    return turns;
+  } catch {
+    // Malformed schema or an unreadable file must not take the transcript sync down with it.
+    return [];
+  }
+}
+
+function jcodeStoredRow(turn: JcodeTurn): StoredRow {
+  return {
+    t: turn.t,
+    model: turn.model,
+    i: turn.i,
+    o: turn.o,
+    d: turn.d,
+    // jcode records no first-token latency and no cost; both stay absent rather than invented.
+    tf: undefined,
+    cr: turn.cr,
+    cw: turn.cw,
+    usd: undefined,
+    st: turn.st,
+    code: undefined,
+    note: undefined,
+    tools: [],
+    host: 'jcode',
+    agent: 'main',
+    id: undefined,
+    cwd: turn.cwd,
+  };
+}
+
+/** One synthetic files row per source ledger; its messages rewrite on every sync. */
+function importJcodeTurns(db: string, push: (sql: string) => boolean): boolean {
+  const ledger = jcodeLedgerPath();
+  const turns = readJcodeTurns(ledger);
+  if (turns.length === 0) return true;
+  // Delete-and-reinsert, the way the OpenCode rows sync: the store's jcode rows are exactly the
+  // ledger's turns after any number of syncs, and the foreign file itself is never rewritten.
+  if (
+    !push(
+      `INSERT INTO files (path, mtime, size) VALUES (${esc(ledger)},0,0)` +
+        ` ON CONFLICT(path) DO UPDATE SET mtime=0,size=0;` +
+        `DELETE FROM messages WHERE file_id=(SELECT id FROM files WHERE path=${esc(ledger)});`,
+    )
+  )
+    return false;
+  for (const turn of turns) {
+    if (!push(insertSql(ledger, jcodeStoredRow(turn)))) return false;
+  }
+  return push(`INSERT OR REPLACE INTO meta (k, v) VALUES ('jcode_ledger','${JCODE_LEDGER_VERSION}');`);
+}
+
 export function syncUsageDb(): boolean {
   let db: string;
   guardReport = null;
@@ -833,7 +949,9 @@ export function syncUsageDb(): boolean {
     if (!prev || prev.mtime !== entry.mtime || prev.size !== entry.size) changed.push(file);
   }
   // `ocDbRows` is non-empty whenever the backfill window is open, so this never skips it.
-  if (!changed.length && !ocDbRows.length) return true;
+  // jcode turns ride the same transaction chunker; a ledger with nothing new must not mask them.
+  const jcodeDirty = readJcodeTurns(jcodeLedgerPath()).length > 0;
+  if (!changed.length && !ocDbRows.length && !jcodeDirty) return true;
   const chunks: string[] = [];
   let chunkBytes = 0;
   const flush = (): boolean => {
@@ -889,6 +1007,9 @@ export function syncUsageDb(): boolean {
       )
         return false;
     }
+    // jcode's ledger is a foreign source: rows insert once by identity, never delete-and-reinsert,
+    // so a repeated sync is a no-op and the source file is never rewritten.
+    if (!importJcodeTurns(db, push)) return false;
   } catch {
     return false;
   }
