@@ -29,6 +29,7 @@ import {
 } from './hosts.ts';
 import type { HostEntry } from './hosts.ts';
 import type { HostId } from '../extensions/shared/host-caps.ts';
+import { jcodeTersioArgs } from '../extensions/shared/jcode-state.ts';
 import { hostCap } from '../extensions/shared/host-caps.ts';
 import {
   CODEX_MARKETPLACE_NAME,
@@ -395,6 +396,33 @@ async function runUninstall(options: UninstallOptions = {}): Promise<boolean> {
   }
   const results: boolean[] = [];
   for (const host of hosts) {
+    // jcode delegates removal to its own CLI: jcode-owned hooks, MCP entry, and plugin state leave;
+    // Tersio's shared settings, usage.db, and the RTK/Headroom binaries are never touched here.
+    if (host === 'jcode') {
+      const selected = allHosts.find((h) => h.id === 'jcode') as HostEntry | undefined;
+      if (selected && !selected.installed && !selected.declared) {
+        sayTagged(`  [skip] ${selected.label} — nothing installed (${selected.installCmd})`);
+        results.push(false);
+        continue;
+      }
+      console.log('Will remove:');
+      console.log('  the Tersio wiring jcode owns: mode guidance, the rtk and usage hooks, and the tersio MCP entry in ~/.jcode/mcp.json');
+      console.log('  Tersio shared settings, its usage.db, and the rtk/headroom binaries stay');
+      if (!confirmed && !(await confirmDestructive('Run jcode tersio uninstall?'))) {
+        results.push(false);
+        continue;
+      }
+      const shim = jcodeTersioArgs('uninstall', { dryRun: shouldDryRun });
+      try {
+        await execP(shim.cmd, shim.args, { timeout: 300_000, cwd: HOME });
+        console.log(`\nDone. ${shouldDryRun ? 'Dry run — nothing was written. ' : ''}Restart jcode to drop the wiring.`);
+        results.push(true);
+      } catch (e) {
+        sayTagged(`  [fail] jcode tersio uninstall did not complete${(e as Error).message ? `: ${(e as Error).message}` : ''}`);
+        results.push(false);
+      }
+      continue;
+    }
     const selected = allHosts.find((h) => h.id === host) as HostEntry;
     await restoreHeadroomRoute(host, shouldDryRun);
     if (host === 'pi') {

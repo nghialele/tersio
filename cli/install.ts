@@ -80,6 +80,7 @@ import {
   readOmpGateway,
 } from '../extensions/shared/headroom-proxy.ts';
 import { ensureTersioMcp, tersioMcpConfigured, tersioMcpSupported } from '../extensions/shared/mcp-config.ts';
+import { jcodeTersioArgs } from '../extensions/shared/jcode-state.ts';
 import { ensureHeadroomRuntime, headroomFitsMachine } from '../extensions/shared/headroom-runtime.ts';
 import { routeHostOn } from '../extensions/shared/headroom-routes.ts';
 import type { HostDefaultField } from './profile.ts';
@@ -1226,6 +1227,31 @@ async function runInstall(forcedHost?: HostId): Promise<void> {
   // apply-update stays silent: the parent printed the plan.
   const quiet = applyUpdate;
   if (!quiet) printWelcome();
+
+  // jcode delegates: its own CLI writes its config, hooks, and MCP entry. Tersio runs it and exits
+  // with its result, touching no shared settings, no extension tree, and no Tersio MCP file.
+  if (targetHost === 'jcode') {
+    const dryRunState = dryRun;
+    if (dryRunState && !quiet) console.log('Preview — no changes will be written.\n');
+    const force = args.includes('--force');
+    const shim = jcodeTersioArgs('install', { dryRun: dryRunState, force });
+    const display = `jcode tersio install${dryRunState ? ' --dry-run' : ''}${force ? ' --force' : ''}`;
+    if (!quiet) console.log(`Installing Tersio into Jcode via ${display}`);
+    try {
+      await execP(shim.cmd, shim.args, { timeout: 300_000, cwd: HOME });
+      if (!quiet)
+        console.log(`\nDone. ${dryRunState ? 'Dry run — nothing was written. ' : ''}Restart jcode to load the wiring.`);
+      closeRL();
+      return;
+    } catch (e) {
+      console.error(
+        `[fail] jcode tersio install did not complete${(e as Error).message ? `: ${(e as Error).message}` : ''}`,
+      );
+      console.error('       Install jcode (or put it on PATH), or run `jcode tersio install` directly for detail.');
+      closeRL();
+      process.exit(1);
+    }
+  }
 
   if (dryRun && !quiet) console.log('Preview — no changes will be written.\n');
 

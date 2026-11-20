@@ -12,6 +12,7 @@ import {
   shimCommand,
 } from '../extensions/shared/utils.ts';
 import { HOST_CAPS } from '../extensions/shared/host-caps.ts';
+import { jcodeTersioState } from '../extensions/shared/jcode-state.ts';
 import { codexHome, installedCodexPlugin } from '../extensions/shared/codex-state.ts';
 import { claudeHome, installedClaudePlugin } from '../extensions/shared/claude-state.ts';
 import type { HostId } from '../extensions/shared/host-caps.ts';
@@ -30,6 +31,13 @@ export interface HostEntry {
   version: string | null;
   /** The extension tree, or the package dir, depending on `via`. */
   dir: string | null;
+  /** The jcode CLI's own wiring report, present only for the delegated jcode host. */
+  jcode?: {
+    guidanceEnabled: boolean;
+    rtkTransformWired: boolean;
+    usageLedgerWired: boolean;
+    mcpWired: boolean;
+  };
 }
 
 /** One detected host, as `detectHosts` returns it. */
@@ -38,6 +46,8 @@ export type DetectedHost = HostEntry;
 export function hostExtensionsDir(id: HostId, agentDir = id === 'pig' ? pigAgentDir() : piAgentDir()): string {
   if (id === 'omp') return path.join(HOME, '.omp', 'agent', 'extensions');
   if (id === 'opencode') return path.join(HOME, '.config', 'opencode', 'plugins', 'tersio');
+  // jcode has no Tersio tree; its wiring lives under jcode's own config dir and the CLI reports it.
+  if (id === 'jcode') return path.join(HOME, '.jcode', 'extensions');
   if (id === 'codex')
     return installedCodexPlugin().dir ?? path.join(codexHome(), 'plugins', 'cache', 'tersio', 'tersio');
   if (id === 'claude') return installedClaudePlugin().dir ?? path.join(claudeHome(), 'tersio-marketplace', 'tersio');
@@ -378,12 +388,20 @@ function detect(agentDir = piAgentDir(), pigDir = pigAgentDir()): HostEntry[] {
     const claude = host.id === 'claude' ? installedClaudePlugin() : null;
     // A tree wins: the installer writes it and it carries no package.json, so its version is ours. OpenCode keeps no package to fall back to, so a present tree is the install and drift gets the per-host warning. DeepSeek Harness has no tree: the tersio package is mounted as a dsh bundle, and the mounted package dir is the install.
     let via: HostEntry['via'] = null;
+    let jcodeWiring: HostEntry['jcode'];
     if (host.id === 'codex') {
       if (codex?.complete && codex.enabled) via = 'plugin';
     } else if (host.id === 'claude') {
       if (claude?.complete && claude.enabled) via = 'plugin';
     } else if (host.id === 'dsh') {
       if (pkgDir && existsSync(pkgDir)) via = 'package';
+    } else if (host.id === 'jcode') {
+      // Delegated: jcode's own CLI is the install state; a Tersio MCP entry alone proves nothing.
+      const state = jcodeTersioState();
+      if (state) {
+        via = 'tree';
+        jcodeWiring = state.wiring;
+      }
     } else if (
       missingTreeFiles(host.id, currentAgentDir).length === 0 ||
       (host.id === 'opencode' && existsSync(tree))
@@ -396,6 +414,7 @@ function detect(agentDir = piAgentDir(), pigDir = pigAgentDir()): HostEntry[] {
       ...host,
       installed: via !== null,
       via,
+      jcode: jcodeWiring,
       declared:
         host.id === 'omp'
           ? pkgDir && existsSync(pkgDir)
@@ -421,7 +440,8 @@ function detect(agentDir = piAgentDir(), pigDir = pigAgentDir()): HostEntry[] {
                       ? 'plugin entry'
                       : null,
       version:
-        via === 'tree'
+        // Delegated jcode exposes no version through its status payload, so none is claimed.
+        via === 'tree' && host.id !== 'jcode'
           ? PACKAGE_VERSION
           : via === 'package' && pkgDir
             ? packageVersion(pkgDir)
@@ -429,7 +449,8 @@ function detect(agentDir = piAgentDir(), pigDir = pigAgentDir()): HostEntry[] {
               ? (codex?.version ?? claude?.version ?? null)
               : null,
       dir:
-        via === 'tree'
+        // jcode owns its config dir; Tersio's tree path would describe files it never wrote.
+        via === 'tree' && host.id !== 'jcode'
           ? tree
           : via === 'package'
             ? pkgDir

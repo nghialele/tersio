@@ -143,8 +143,9 @@ function hostRows(): Array<{
     label: host.label,
     installed: host.installed,
     version: host.version,
-    mcp: tersioMcpConfigured(host.id),
-    supported: hostCap(host.id)?.mcp != null,
+    mcp: host.id === 'jcode' ? (host.jcode?.mcpWired ?? false) : tersioMcpConfigured(host.id),
+    // jcode is supported for native delegation, but Tersio never writes its MCP config.
+    supported: host.id === 'jcode' ? true : hostCap(host.id)?.mcp != null,
     hint: host.installCmd,
   }));
 }
@@ -159,7 +160,9 @@ function hostsText(): string {
         ? 'MCP wired'
         : row.supported
           ? 'MCP not wired — run `tersio install --host ' + row.id + '`'
-          : 'MCP not wired';
+          : row.id === 'jcode'
+            ? 'MCP delegated to jcode — `jcode tersio install` wires it'
+            : 'MCP not wired';
       return `${row.label} (${row.id}): ${state} · ${mcp}`;
     }),
   ].join('\n');

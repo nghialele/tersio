@@ -117,8 +117,10 @@ export const GENERATED_TREE_FILES: Readonly<Record<string, string>> = {
 export const DSH_BUNDLE_FILES: readonly string[] = ['dsh/index.ts', 'dsh/cordis.patch.yml'];
 
 /** The files one host's extension tree holds. The package tree holds all of them. DeepSeek Harness mounts the tersio package as a bundle, so its tree is the plugin's own two files. */
-export function treeFilesFor(id: 'omp' | 'pi' | 'opencode' | 'pig' | 'dsh'): readonly string[] {
+export function treeFilesFor(id: 'omp' | 'pi' | 'opencode' | 'pig' | 'dsh' | 'jcode'): readonly string[] {
   if (id === 'dsh') return DSH_BUNDLE_FILES;
+  // jcode owns its wiring under its own config; Tersio ships no tree files for it.
+  if (id === 'jcode') return [];
   if (id === 'opencode') return TREE_FILES;
   const files = TREE_FILES.filter((file) => file !== OPENCODE_ENTRY);
   return id === 'pi' || id === 'pig' ? [...files, PI_RTK_MANIFEST] : files;
@@ -144,7 +146,7 @@ const OBSOLETE_FILES = [
 ] as const;
 
 /** Debris test for a tree-relative path; one definition shared by detection and repair. */
-export function isObsoleteTreeFile(rel: string, id: 'omp' | 'pi' | 'opencode' | 'pig' | 'dsh'): boolean {
+export function isObsoleteTreeFile(rel: string, id: 'omp' | 'pi' | 'opencode' | 'pig' | 'dsh' | 'jcode'): boolean {
   if (rel.endsWith('.bak') || rel === '.DS_Store') return true;
   if (OBSOLETE_DIRS.includes(rel.split('/')[0] as (typeof OBSOLETE_DIRS)[number])) return true;
   if ((OBSOLETE_FILES as readonly string[]).includes(rel)) return true;

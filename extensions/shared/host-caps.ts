@@ -7,7 +7,7 @@ import { homeDir, piAgentDir, pigAgentDir } from './utils.ts';
 import { codexPluginInstalled } from './codex-state.ts';
 import { claudeMcpConfigured } from './claude-state.ts';
 
-export type HostId = 'omp' | 'pi' | 'opencode' | 'pig' | 'dsh' | 'codex' | 'claude';
+export type HostId = 'omp' | 'pi' | 'opencode' | 'pig' | 'dsh' | 'codex' | 'claude' | 'jcode';
 
 type McpShape = 'mcpServers' | 'mcp' | 'plugin';
 
@@ -161,6 +161,18 @@ export const HOST_CAPS: Record<HostId, HostCap> = {
     // Headroom's own `init claude` writes the durable hooks and provider routing.
     headroom: true,
     headroomDurable: true,
+  },
+  jcode: {
+    id: 'jcode',
+    label: 'Jcode',
+    bin: 'jcode',
+    // Delegated: jcode owns its own config, hooks, and MCP entry; Tersio never writes either side.
+    installCmd: 'jcode tersio install',
+    removeCmd: 'jcode tersio uninstall',
+    mcp: null,
+    mcpFile: () => null,
+    rtkAgent: null,
+    headroom: false,
   },
 };
 

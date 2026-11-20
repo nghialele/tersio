@@ -328,6 +328,13 @@ async function runDoctor(recheck = false): Promise<DoctorSummary> {
     }
     check(host.label, true, [agentDetail, '(installed)'].filter(Boolean).join(' '));
     // The MCP entry is a second file an install writes; a tool that never appears starts here.
+    // jcode owns its own MCP wiring, so the delegated booleans stand in for tersioMcpConfigured.
+    if (host.id === 'jcode') {
+      if (host.jcode && !host.jcode.mcpWired) {
+        warnLine(`${host.label} MCP`, 'not wired — run: jcode tersio install');
+      }
+      continue;
+    }
     if (!tersioMcpConfigured(host.id)) {
       warnLine(
         `${host.label} MCP`,

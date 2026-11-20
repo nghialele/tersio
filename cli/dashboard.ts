@@ -651,6 +651,13 @@ function computeDoctorRows(): DoctorRow[] {
       );
     }
     // Declining the MCP entry at install is allowed, so this row informs without counting as a fault.
+    // jcode owns its own MCP wiring; its delegated boolean is the row, never a tersio install hint.
+    if (host.id === 'jcode') {
+      if (host.jcode && !host.jcode.mcpWired) {
+        warning(`${host.label} MCP`, 'MCP server not wired — run: jcode tersio install', host.id);
+      }
+      continue;
+    }
     if (!tersioMcpConfigured(host.id)) {
       warning(
         `${host.label} MCP`,
